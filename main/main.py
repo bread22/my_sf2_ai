@@ -5,6 +5,8 @@ import numpy as np
 import gym
 import retro
 
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 # Define the Q-Network
 class DQN(nn.Module):
@@ -17,6 +19,7 @@ class DQN(nn.Module):
             nn.ReLU(),
             nn.Linear(256, output_dim)
         )
+        self.to(DEVICE)
 
     def forward(self, x):
         x = x.view(x.size(0), -1)  # Flatten the input tensor
@@ -28,7 +31,7 @@ def preprocess_screen(screen):
     screen = np.dot(screen[..., :3], [0.299, 0.587, 0.114])
     screen = screen / 255.0
     screen = screen[::2, ::2]  # Downsample the screen by a factor of 2
-    return torch.tensor(screen.copy(), dtype=torch.float32).unsqueeze(0)
+    return torch.tensor(screen.copy(), dtype=torch.float32, device=DEVICE).unsqueeze(0)
 
 
 def action_to_array(action, num_buttons):
@@ -51,15 +54,22 @@ loss_fn = nn.MSELoss()
 
 # Train the model
 num_episodes = 500
+save_interval = 20
 epsilon = 0.9
 gamma = 0.99
+
 
 for episode in range(num_episodes):
     state = preprocess_screen(env.reset())
     done = False
 
+    if (episode + 1) % save_interval == 0:
+        save_path = f"models/model_episode_{episode + 1}.pth"
+        torch.save(model.state_dict(), save_path)
+        print(f"Model saved at episode {episode + 1}")
+
     while not done:
-        env.render()
+        # env.render()
 
         # Epsilon-greedy action selection
         if np.random.rand() < epsilon:
@@ -73,10 +83,17 @@ for episode in range(num_episodes):
         # Take a step in the environment
         next_state, reward, done, _ = env.step(action_array)
         next_state = preprocess_screen(next_state)
+        next_state = next_state.to(DEVICE)
 
         # Update the model
-        target = reward + gamma * torch.max(model(next_state))
+        with torch.no_grad():
+            target = reward + gamma * torch.max(model(next_state))
         current_q = model(state)[0, action]
+
+        # Move target and current_q to GPU
+        target = target.unsqueeze(0)
+        target = target.to(DEVICE)
+        current_q = current_q.to(DEVICE)
 
         loss = loss_fn(current_q, target)
         optimizer.zero_grad()
@@ -92,6 +109,6 @@ env.close()
 
 
 # Save the model
-torch.save(model.state_dict(), 'sf2_ai.pth')
+torch.save(model.state_dict(), 'models/sf2_ai_final.pth')
 
 
