@@ -1,91 +1,94 @@
-import random
-from collections import deque
-
-import gym
-import numpy as np
+import retro
 import torch
-import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
+from collections import deque
+from model import DQN
+import random
+import numpy as np
 
-from model import DQN, ReplayMemory
 
-BATCH_SIZE = 32
-GAMMA = 0.99
-EPS_START = 1.0
-EPS_END = 0.02
-EPS_DECAY = 1000000
-TARGET_UPDATE = 1000
-MEMORY_SIZE = 100000
+def train():
+    # Environment
+    game = 'StreetFighterIISpecialChampionEdition-Genesis'
+    state = 'Champion.Level1.RyuVsGuile'
+    env = retro.make(game, state, record='.')
+    env.reset()
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # GPU
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def optimize_model(memory, policy_net, target_net, optimizer):
-    if len(memory) < BATCH_SIZE:
-        return
-    states, actions, rewards, next_states, dones = memory.sample(BATCH_SIZE)
-    states = torch.tensor(states, dtype=torch.float32).to(device)
-    actions = torch.tensor(actions, dtype=torch.int64).unsqueeze(1).to(device)
-    rewards = torch.tensor(rewards, dtype=torch.float32).unsqueeze(1).to(device)
-    next_states = torch.tensor(next_states, dtype=torch.float32).to(device)
-    dones = torch.tensor(dones, dtype=torch.float32).unsqueeze(1).to(device)
-
-    q_values = policy_net(states).gather(1, actions)
-    next_q_values = target_net(next_states).max(1)[0].unsqueeze(1)
-    expected_q_values = rewards + GAMMA * next_q_values * (1 - dones)
-
-    loss = nn.SmoothL1Loss()(q_values, expected_q_values)
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-
-def select_action(state, policy_net, eps):
-    if random.random() < eps:
-        return random.randrange(policy_net.fc3.out_features)
-    else:
-        with torch.no_grad():
-            state = torch.tensor([state], dtype=torch.float32).to(device)
-            q_values = policy_net(state)
-            return q_values.argmax().item()
-
-def train(num_episodes=1000, save_path='policy_net.pth'):
-    env = gym.make('StreetFighterIISpecialChampionEdition-v0')
-    obs = env.reset()
-    input_shape = obs.shape[0] * obs.shape[1] * obs.shape[2]
+    # Model
+    input_shape = env.observation_space.shape
     num_actions = env.action_space.n
     policy_net = DQN(input_shape, num_actions).to(device)
     target_net = DQN(input_shape, num_actions).to(device)
     target_net.load_state_dict(policy_net.state_dict())
     target_net.eval()
-    optimizer = optim.Adam(policy_net.parameters(), lr=1e-4)
-    memory = ReplayMemory(MEMORY_SIZE)
 
-    episode_rewards = []
-    for episode in range(num_episodes):
+    # Training
+    optimizer = optim.Adam(policy_net.parameters(), lr=0.00025)
+    memory = deque(maxlen=10000)
+    batch_size = 32
+    gamma = 0.95
+    eps_start = 1
+    eps_end = 0.1
+    eps_decay = 1000000
+    target_update = 10
+    num_episodes = 10
+    for i_episode in range(num_episodes):
         obs = env.reset()
-        state = np.array(obs).flatten()
-        eps = EPS_END + (EPS_START - EPS_END) * np.exp(-episode / EPS_DECAY)
-        episode_reward = 0
+        total_reward = 0
+        done = False
+        while not done:
+            epsilon = eps_end + (eps_start - eps_end) * \
+                np.exp(-1. * len(memory) / eps_decay)
+            action = env.action_space.sample() if np.random.uniform(
+                0, 1) < epsilon else policy_net(
+                torch.tensor(obs, dtype=torch.float32).unsqueeze(0).to(device)).argmax(dim=1).item()
 
-        while True:
-            action = select_action(state, policy_net, eps)
-            obs, reward, done, info = env.step(action)
-            next_state = np.array(obs).flatten()
-            episode_reward += reward
-            reward = np.sign(reward)
-            memory.push(state, action, reward, next_state, done)
-            state = next_state
+            next_obs, reward, done, info = env.step(action)
+            total_reward += reward
+            memory.append((obs, action, next_obs, reward, done))
 
-            optimize_model(memory, policy_net, target_net, optimizer)
+            obs = next_obs
 
-            if done:
-                episode_rewards.append(episode_reward)
-                print(f"Episode {episode}, Reward: {episode_reward}")
-                break
+            if len(memory) < batch_size:
+                continue
 
-        if episode % TARGET_UPDATE == 0:
-            target_net.load_state_dict(policy_net.state_dict())
+            batch = random.sample(memory, batch_size)
+            obs_batch, action_batch, next_obs_batch, reward_batch, done_batch = map(
+                np.array, zip(*batch))
+            obs_batch = torch.tensor(obs_batch, dtype=torch.float32).to(device)
+            action_batch = torch.tensor(
+                action_batch, dtype=torch.long).unsqueeze(-1).to(device)
+            next_obs_batch = torch.tensor(
+                next_obs_batch, dtype=torch.float32).to(device)
+            reward_batch = torch.tensor(
+                reward_batch, dtype=torch.float32).unsqueeze(-1).to(device)
+            done_batch = torch.tensor(
+                done_batch, dtype=torch.float32).unsqueeze(-1).to(device)
 
-        torch.save(policy_net.state_dict(), save_path)
+            current_q = policy_net(obs_batch).gather(
+                1, action_batch).squeeze(-1)
+            next_q = target_net(
+                next_obs_batch).max(dim=1, keepdim=True)[0].detach()
+            target_q = reward_batch + gamma * next_q * (1 - done_batch)
 
-        return episode_rewards
+            loss = F.mse_loss(current_q, target_q)
 
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            if env.frame_count % (target_update * 1000) == 0:
+                target_net.load_state_dict(policy_net.state_dict())
+
+        print('Episode: %d, total_reward: %d' % (i_episode, total_reward))
+
+    # Save model
+    torch.save(policy_net.state_dict(), 'policy_net.pt')
+
+
+if __name__ == '__main__':
+    train()

@@ -1,43 +1,32 @@
-import random
-from collections import deque
-
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
-BATCH_SIZE = 32
-GAMMA = 0.99
-EPS_START = 1.0
-EPS_END = 0.02
-EPS_DECAY = 1000000
-TARGET_UPDATE = 1000
-MEMORY_SIZE = 100000
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class DQN(nn.Module):
     def __init__(self, input_shape, num_actions):
         super(DQN, self).__init__()
-        self.fc1 = nn.Linear(input_shape, 128)
-        self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, num_actions)
+        self.conv1 = nn.Conv2d(input_shape[2], 32, kernel_size=8, stride=4)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
+        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
+        fc_input_shape = self._get_conv_output(input_shape)
+        self.fc1 = nn.Linear(fc_input_shape, 512)
+        self.fc2 = nn.Linear(512, num_actions)
 
     def forward(self, x):
-        x = torch.relu(self.fc1(x))
-        x = torch.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = x.float() / 255
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
+        x = x.view(x.size(0), -1)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
         return x
 
-class ReplayMemory:
-    def __init__(self, capacity):
-        self.capacity = capacity
-        self.memory = deque(maxlen=capacity)
-
-    def push(self, state, action, reward, next_state, done):
-        self.memory.append((state, action, reward, next_state, done))
-
-    def sample(self, batch_size):
-        states, actions, rewards, next_states, dones = zip(*random.sample(self.memory, batch_size))
-        return states, actions, rewards, next_states, dones
-
-    def __len__(self):
-        return len(self.memory)
+    def _get_conv_output(self, shape):
+        x = torch.zeros(shape)
+        x = x.unsqueeze(0)
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.conv3(x)
+        return int(x.reshape(1, -1).size()[1])
