@@ -19,6 +19,7 @@ class DQN(nn.Module):
         )
 
     def forward(self, x):
+        x = x.view(x.size(0), -1)  # Flatten the input tensor
         return self.net(x)
 
 
@@ -26,12 +27,22 @@ class DQN(nn.Module):
 def preprocess_screen(screen):
     screen = np.dot(screen[..., :3], [0.299, 0.587, 0.114])
     screen = screen / 255.0
+    screen = screen[::2, ::2]  # Downsample the screen by a factor of 2
     return torch.tensor(screen.copy(), dtype=torch.float32).unsqueeze(0)
+
+
+def action_to_array(action, num_buttons):
+    action_array = np.zeros(num_buttons, dtype=np.uint8)
+    action_array[action] = 1
+    return action_array
 
 
 # Define the environment and model
 env = retro.make(game='StreetFighterIISpecialChampionEdition-Genesis', state='Champion.Level1.RyuVsGuile')
-input_dim = env.observation_space.shape[0] * env.observation_space.shape[1] * env.observation_space.shape[2]
+screen_height, screen_width = preprocess_screen(env.reset()).shape[1:]
+input_dim = screen_height * screen_width
+#
+# input_dim = env.observation_space.shape[0] * env.observation_space.shape[1] * env.observation_space.shape[2]
 output_dim = env.action_space.n
 
 model = DQN(input_dim, output_dim)
@@ -57,7 +68,10 @@ for episode in range(num_episodes):
             q_values = model(state)
             action = torch.argmax(q_values).item()
 
-        next_state, reward, done, _ = env.step(action)
+        # Convert action to an array of buttons
+        action_array = action_to_array(action, env.action_space.n)
+        # Take a step in the environment
+        next_state, reward, done, _ = env.step(action_array)
         next_state = preprocess_screen(next_state)
 
         # Update the model
