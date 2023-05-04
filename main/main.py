@@ -84,7 +84,7 @@ for episode in range(num_episodes):
         optimizer.step()
 
         state = next_state
-        epsilon *= 0.999
+    epsilon *= 0.999
 
     print(f"Episode: {episode}, Epsilon: {epsilon}")
 
