@@ -12,11 +12,15 @@ def select_action(state, policy_net):
         q_values = policy_net(state)
         return q_values.argmax().item()
 
-def test(policy_net, num_episodes=10):
+def test(load_path='policy_net.pth', num_episodes=10):
     env = gym.make('StreetFighterIISpecialChampionEdition-v0')
     obs = env.reset()
     input_shape = obs.shape[0] * obs.shape[1] * obs.shape[2]
     num_actions = env.action_space.n
+
+    policy_net = DQN(input_shape, num_actions).to(device)
+    policy_net.load_state_dict(torch.load(load_path))
+    policy_net.eval()
 
     episode_rewards = []
     for episode in range(num_episodes):

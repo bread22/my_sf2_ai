@@ -47,7 +47,7 @@ def select_action(state, policy_net, eps):
             q_values = policy_net(state)
             return q_values.argmax().item()
 
-def train(num_episodes=1000):
+def train(num_episodes=1000, save_path='policy_net.pth'):
     env = gym.make('StreetFighterIISpecialChampionEdition-v0')
     obs = env.reset()
     input_shape = obs.shape[0] * obs.shape[1] * obs.shape[2]
@@ -85,4 +85,7 @@ def train(num_episodes=1000):
         if episode % TARGET_UPDATE == 0:
             target_net.load_state_dict(policy_net.state_dict())
 
-    return policy_net, episode_rewards
+        torch.save(policy_net.state_dict(), save_path)
+
+        return episode_rewards
+
