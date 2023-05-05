@@ -1,8 +1,16 @@
 import torch
 import torch.optim as optim
-import gym
+import retro
 import time
 from model import StreetFighterAgent
+import cv2
+
+
+def preprocess_state(state):
+    gray_state = cv2.cvtColor(state, cv2.COLOR_RGB2GRAY)
+    resized_state = cv2.resize(gray_state, (84, 84))
+    return resized_state
+
 
 # timer
 start_time = int(time.time())
@@ -11,8 +19,10 @@ start_time = int(time.time())
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # Create environment
-env = gym.make('StreetFighterIISpecialChampionEdition-Genesis')
-observation_shape = env.observation_space.shape
+env = retro.make(game='StreetFighterIISpecialChampionEdition-Genesis', state='Champion.Level1.RyuVsGuile')
+state = env.reset()
+preprocessed_state = preprocess_state(state)
+observation_shape = (1, *preprocessed_state.shape)  # Add the channel dimension
 n_actions = env.action_space.n
 
 # Initialize agent

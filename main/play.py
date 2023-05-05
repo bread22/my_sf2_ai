@@ -1,11 +1,13 @@
 import torch
 import gym
 from model import StreetFighterAgent
+import cv2
 
 
 def preprocess_state(state):
-    # Implement any preprocessing required for the input state
-    return state
+    gray_state = cv2.cvtColor(state, cv2.COLOR_RGB2GRAY)
+    resized_state = cv2.resize(gray_state, (84, 84))
+    return resized_state
 
 
 # Set device
