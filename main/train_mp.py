@@ -63,6 +63,11 @@ def train_process(process_index, device, num_episodes, save_every, init_time):
             torch.save(agent.state_dict(), f"models/agent_{process_index}_{episode + 1}.pt")
             print(f"Saving models/agent_{process_index}_{episode}.pt")
 
+    # Save the final model for this process
+    save_path = f"models/agent_process_{process_index}_final.pt"
+    torch.save(agent.state_dict(), save_path)
+    print(f"Process {process_index}: Saving {save_path}")
+
 
 if __name__ == '__main__':
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -74,3 +79,35 @@ if __name__ == '__main__':
     # Use a pool of processes to parallelize
     with mp.Pool(processes=num_processes) as pool:
         pool.starmap(train_process, [(process_index, device, num_episodes, save_every, init_time) for process_index in range(num_processes)])
+
+    # Create a new env
+    env = retro.make(game='StreetFighterIISpecialChampionEdition-Genesis', state='Champion.Level1.RyuVsGuile')
+    state = env.reset()
+    preprocessed_state = preprocess_state(state)
+    observation_shape = (1, *preprocessed_state.shape)  # Add the channel dimension
+    n_actions = env.action_space.n
+
+    # Combine models from all processes
+    combined_agent = StreetFighterAgent(observation_shape, n_actions).to(device)
+
+    # Load models and sum parameters
+    for process_index in range(num_processes):
+        state_dict = torch.load(f"models/agent_process_{process_index}_final.pt")
+        combined_agent.load_state_dict(state_dict, strict=False)
+
+        if process_index == 0:
+            combined_params = {name: param.clone() for name, param in combined_agent.named_parameters()}
+        else:
+            for name, param in combined_agent.named_parameters():
+                combined_params[name] += param
+
+    # Average the parameters
+    for name in combined_params:
+        combined_params[name] /= num_processes
+
+    # Update the combined agent with the averaged parameters
+    combined_agent.load_state_dict(combined_params)
+
+    # Save the final model
+    torch.save(combined_agent.state_dict(), "models/final_agent.pt")
+    print("Final model saved as models/final_agent.pt")
