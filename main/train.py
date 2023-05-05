@@ -37,7 +37,7 @@ def one_hot_encode_action(action, num_actions):
 
 
 # timer
-start_time = int(time.time())
+start_time = time.time()
 
 # Set device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -70,6 +70,7 @@ for episode in range(num_episodes):
         action = agent.act(state)
         encoded_action = one_hot_encode_action(action, n_actions)
         next_state, reward, done, _ = env.step(encoded_action)
+        env.render()  # Add this line
 
         next_state = preprocess_state(next_state)
         next_state = np.expand_dims(next_state, axis=0)
@@ -82,5 +83,7 @@ for episode in range(num_episodes):
             batch = replay_buffer.sample(batch_size)
             agent.update(batch, optimizer, target_network, device)
 
+    print(f'episode: {episode}, elapse time: {int(time.time() - start_time)}')
     if episode % save_every == 0:
         torch.save(agent.state_dict(), f"models/agent_{episode}.pt")
+        print(f"Saving models/agent_{episode}.pt")
