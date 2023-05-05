@@ -1,72 +1,36 @@
-import torch
+import os
+from model import CustomCNN, PPO
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 import retro
-import time
-from model import StreetFighterAgent, ReplayBuffer
-import cv2
-import numpy as np
-from copy import deepcopy
 
+def render_callback(local_vars, global_vars):
+    local_vars['self'].env.render()
 
-def preprocess_state(state):
-    gray_state = cv2.cvtColor(state, cv2.COLOR_RGB2GRAY)
-    resized_state = cv2.resize(gray_state, (84, 84))
-    return resized_state
+def make_env(env_id, state):
+    def _init():
+        env = retro.make(game=env_id, state=state)
+        return env
+    return _init
 
+def main():
+    env_id = "StreetFighterIISpecialChampionEdition-Genesis"
+    state = "Champion.Level1.RyuVsGuile"
+    model_path = 'models/sf2_model'
 
-def one_hot_encode_action(action, num_actions):
-    encoded_action = np.zeros(num_actions)
-    encoded_action[action] = 1
-    return encoded_action
+    num_envs = 4  # Number of environments to run in parallel
 
+    # Create a vectorized environment with multiple parallel environments
+    env = SubprocVecEnv([make_env(env_id, state) for _ in range(num_envs)])
 
-# timer
-start_time = time.time()
+    policy_kwargs = {
+        "features_extractor_class": CustomCNN,
+        "features_extractor_kwargs": {"feature_dim": 128},
+    }
 
-# Set device
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model = PPO("CnnPolicy", env, policy_kwargs=policy_kwargs, verbose=1, device='cuda')
+    model.learn(total_timesteps=int(1e6))
 
-# Create environment
-env = retro.make(game='StreetFighterIISpecialChampionEdition-Genesis', state='Champion.Level1.RyuVsGuile')
-state = env.reset()
-preprocessed_state = preprocess_state(state)
-observation_shape = (1, *preprocessed_state.shape)  # Add the channel dimension
-n_actions = env.action_space.n
+    model.save(model_path)
 
-# Initialize agent
-agent = StreetFighterAgent(observation_shape, n_actions).to(device)
-batch_size = 64
-replay_buffer = ReplayBuffer(10000)
-optimizer = torch.optim.Adam(agent.parameters(), lr=0.00025)
-target_network = deepcopy(agent)
-
-# Training parameters
-num_episodes = 1000
-max_timesteps = 10000
-save_every = 20
-
-for episode in range(num_episodes):
-    state = preprocess_state(env.reset())
-    state = np.expand_dims(state, axis=0)
-    done = False
-
-    while not done:
-        action = agent.act(state)
-        encoded_action = one_hot_encode_action(action, n_actions)
-        next_state, reward, done, _ = env.step(encoded_action)
-        # env.render()  # Add this line
-
-        next_state = preprocess_state(next_state)
-        next_state = np.expand_dims(next_state, axis=0)
-
-        replay_buffer.push(state, action, reward, next_state, done)
-
-        state = next_state
-
-        if len(replay_buffer) > batch_size:
-            batch = replay_buffer.sample(batch_size)
-            agent.update(batch, optimizer, target_network, device)
-
-    print(f'episode: {episode}, elapse time: {int(time.time() - start_time)}')
-    if episode + 1 % save_every == 0:
-        torch.save(agent.state_dict(), f"models/agent_{episode + 1}.pt")
-        print(f"Saving models/agent_{episode}.pt")
+if __name__ == "__main__":
+    main()
