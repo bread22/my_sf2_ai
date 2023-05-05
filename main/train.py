@@ -5,6 +5,23 @@ import time
 from model import StreetFighterAgent
 import cv2
 import numpy as np
+import collections
+import random
+from copy import deepcopy
+
+
+class ReplayBuffer:
+    def __init__(self, capacity):
+        self.buffer = collections.deque(maxlen=capacity)
+
+    def push(self, state, action, reward, next_state, done):
+        self.buffer.append((state, action, reward, next_state, done))
+
+    def sample(self, batch_size):
+        return random.sample(self.buffer, batch_size)
+
+    def __len__(self):
+        return len(self.buffer)
 
 
 def preprocess_state(state):
@@ -34,7 +51,10 @@ n_actions = env.action_space.n
 
 # Initialize agent
 agent = StreetFighterAgent(observation_shape, n_actions).to(device)
-optimizer = optim.Adam(agent.parameters())
+batch_size = 64
+replay_buffer = ReplayBuffer(10000)
+optimizer = torch.optim.Adam(agent.parameters(), lr=0.00025)
+target_network = deepcopy(agent)
 
 # Training parameters
 num_episodes = 1000
@@ -42,25 +62,25 @@ max_timesteps = 10000
 save_every = 20
 
 for episode in range(num_episodes):
-    state = env.reset()
-    total_reward = 0
+    state = preprocess_state(env.reset())
+    state = np.expand_dims(state, axis=0)
+    done = False
 
-    for t in range(max_timesteps):
-        state = preprocess_state(state)
-        state = np.expand_dims(state, axis=0)  # Add channel dimension
+    while not done:
         action = agent.act(state)
-        next_state, reward, done, _ = env.step(one_hot_encode_action(action, n_actions))
-        total_reward += reward
+        encoded_action = one_hot_encode_action(action, n_actions)
+        next_state, reward, done, _ = env.step(encoded_action)
 
-        # Update agent
-        agent.update(next_state, reward, done)
+        next_state = preprocess_state(next_state)
+        next_state = np.expand_dims(next_state, axis=0)
+
+        replay_buffer.push(state, action, reward, next_state, done)
 
         state = next_state
 
-        if done:
-            break
-
-    print(f"Episode: {episode}, Total Reward: {total_reward}, elap_time: {int(time.time() - start_time)}")
+        if len(replay_buffer) > batch_size:
+            batch = replay_buffer.sample(batch_size)
+            agent.update(batch, optimizer, target_network, device)
 
     if episode % save_every == 0:
-        torch.save(agent.state_dict(), f"models/model_{episode}.pth")
+        torch.save(agent.state_dict(), f"models/agent_{episode}.pt")
