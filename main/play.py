@@ -1,8 +1,8 @@
 import torch
-import gym
-from model import StreetFighterAgent
+import retro
 import cv2
 import numpy as np
+from model import StreetFighterAgent
 
 
 def preprocess_state(state):
@@ -11,37 +11,47 @@ def preprocess_state(state):
     return resized_state
 
 
-# Set device
+def one_hot_encode_action(action, num_actions):
+    encoded_action = np.zeros(num_actions)
+    encoded_action[action] = 1
+    return encoded_action
+
+
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 # Create environment
-env = gym.make('StreetFighterIISpecialChampionEdition-Genesis')
-observation_shape = env.observation_space.shape
+env = retro.make(game='StreetFighterIISpecialChampionEdition-Genesis', state='Champion.Level1.RyuVsGuile')
+state = env.reset()
+preprocessed_state = preprocess_state(state)
+observation_shape = (1, *preprocessed_state.shape)  # Add the channel dimension
 n_actions = env.action_space.n
 
 # Initialize agent
 agent = StreetFighterAgent(observation_shape, n_actions).to(device)
 
 # Load trained model
-model_path = "models/model.pth"  # Replace with the appropriate model filename
-agent.load_state_dict(torch.load(model_path, map_location=device))
-agent.eval()
+agent.load_state_dict(torch.load("models/final_agent.pt"))
 
-state = env.reset()
-done = False
+# Play
+num_episodes = 10
 
-while not done:
-    env.render()
+for episode in range(num_episodes):
+    state = preprocess_state(env.reset())
+    state = np.expand_dims(state, axis=0)
+    done = False
+    total_reward = 0
 
-    state = preprocess_state(state)
-    state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
+    while not done:
+        action = agent.act(state)
+        encoded_action = one_hot_encode_action(action, n_actions)
+        next_state, reward, done, _ = env.step(encoded_action)
+        env.render()
 
-    with torch.no_grad():
-        state = preprocess_state(state)
-        state = np.expand_dims(state, axis=0)  # Add channel dimension
-        action = torch.argmax(agent(state)).item()
+        next_state = preprocess_state(next_state)
+        next_state = np.expand_dims(next_state, axis=0)
+        state = next_state
+        total_reward += reward
 
-    next_state, reward, done, _ = env.step(action)
-    state = next_state
+    print(f'Episode {episode + 1}, Total reward: {total_reward}')
 
 env.close()
