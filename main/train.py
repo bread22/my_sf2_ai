@@ -4,6 +4,7 @@ import retro
 import time
 from model import StreetFighterAgent
 import cv2
+import numpy as np
 
 
 def preprocess_state(state):
@@ -39,6 +40,8 @@ for episode in range(num_episodes):
     total_reward = 0
 
     for t in range(max_timesteps):
+        state = preprocess_state(state)
+        state = np.expand_dims(state, axis=0)  # Add channel dimension
         action = agent.act(state)
         next_state, reward, done, _ = env.step(action)
         total_reward += reward

@@ -2,6 +2,7 @@ import torch
 import gym
 from model import StreetFighterAgent
 import cv2
+import numpy as np
 
 
 def preprocess_state(state):
@@ -36,6 +37,8 @@ while not done:
     state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
 
     with torch.no_grad():
+        state = preprocess_state(state)
+        state = np.expand_dims(state, axis=0)  # Add channel dimension
         action = torch.argmax(agent(state)).item()
 
     next_state, reward, done, _ = env.step(action)
