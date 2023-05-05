@@ -13,6 +13,12 @@ def preprocess_state(state):
     return resized_state
 
 
+def one_hot_encode_action(action, num_actions):
+    encoded_action = np.zeros(num_actions)
+    encoded_action[action] = 1
+    return encoded_action
+
+
 # timer
 start_time = int(time.time())
 
@@ -43,7 +49,7 @@ for episode in range(num_episodes):
         state = preprocess_state(state)
         state = np.expand_dims(state, axis=0)  # Add channel dimension
         action = agent.act(state)
-        next_state, reward, done, _ = env.step(action)
+        next_state, reward, done, _ = env.step(one_hot_encode_action(action, n_actions))
         total_reward += reward
 
         # Update agent
