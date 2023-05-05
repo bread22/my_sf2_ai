@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import random
+
+# Set device
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class StreetFighterAgent(nn.Module):
@@ -29,3 +33,12 @@ class StreetFighterAgent(nn.Module):
     def forward(self, x):
         conv_out = self.conv(x).view(x.size()[0], -1)
         return self.fc(conv_out)
+
+    def act(self, state, epsilon=0.1):
+        if random.random() < epsilon:
+            return random.randrange(self.fc[-1].out_features)
+        else:
+            with torch.no_grad():
+                state = torch.tensor(state, dtype=torch.float32).unsqueeze(0).to(device)
+                q_values = self.forward(state)
+                return torch.argmax(q_values).item()
