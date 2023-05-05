@@ -1,27 +1,10 @@
 import torch
-import torch.optim as optim
 import retro
 import time
-from model import StreetFighterAgent
+from model import StreetFighterAgent, ReplayBuffer
 import cv2
 import numpy as np
-import collections
-import random
 from copy import deepcopy
-
-
-class ReplayBuffer:
-    def __init__(self, capacity):
-        self.buffer = collections.deque(maxlen=capacity)
-
-    def push(self, state, action, reward, next_state, done):
-        self.buffer.append((state, action, reward, next_state, done))
-
-    def sample(self, batch_size):
-        return random.sample(self.buffer, batch_size)
-
-    def __len__(self):
-        return len(self.buffer)
 
 
 def preprocess_state(state):
@@ -70,7 +53,7 @@ for episode in range(num_episodes):
         action = agent.act(state)
         encoded_action = one_hot_encode_action(action, n_actions)
         next_state, reward, done, _ = env.step(encoded_action)
-        env.render()  # Add this line
+        # env.render()  # Add this line
 
         next_state = preprocess_state(next_state)
         next_state = np.expand_dims(next_state, axis=0)
@@ -84,6 +67,6 @@ for episode in range(num_episodes):
             agent.update(batch, optimizer, target_network, device)
 
     print(f'episode: {episode}, elapse time: {int(time.time() - start_time)}')
-    if episode % save_every == 0:
-        torch.save(agent.state_dict(), f"models/agent_{episode}.pt")
+    if episode + 1 % save_every == 0:
+        torch.save(agent.state_dict(), f"models/agent_{episode + 1}.pt")
         print(f"Saving models/agent_{episode}.pt")

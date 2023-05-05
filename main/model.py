@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import random
+import collections
 import torch.nn.functional as F
 
 
@@ -48,11 +49,12 @@ class StreetFighterAgent(nn.Module):
     def update(self, batch, optimizer, target_network, device, gamma=0.99):
         states, actions, rewards, next_states, dones = zip(*batch)
 
-        states = torch.tensor(states, dtype=torch.float32).to(device)
-        actions = torch.tensor(actions, dtype=torch.long).to(device).view(-1, 1)
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
-        next_states = torch.tensor(next_states, dtype=torch.float32).to(device)
-        dones = torch.tensor(dones, dtype=torch.float32).to(device)
+        # Convert the lists of NumPy arrays to single NumPy arrays before creating tensors
+        states = torch.tensor(np.array(states), dtype=torch.float32).to(device)
+        actions = torch.tensor(np.array(actions), dtype=torch.long).to(device).view(-1, 1)
+        rewards = torch.tensor(np.array(rewards), dtype=torch.float32).to(device)
+        next_states = torch.tensor(np.array(next_states), dtype=torch.float32).to(device)
+        dones = torch.tensor(np.array(dones, dtype=np.uint8), dtype=torch.float32).to(device)
 
         current_q_values = self(states).gather(1, actions)
         next_q_values = target_network(next_states).max(1)[0].detach()
@@ -62,3 +64,17 @@ class StreetFighterAgent(nn.Module):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+
+class ReplayBuffer:
+    def __init__(self, capacity):
+        self.buffer = collections.deque(maxlen=capacity)
+
+    def push(self, state, action, reward, next_state, done):
+        self.buffer.append((state, action, reward, next_state, done))
+
+    def sample(self, batch_size):
+        return random.sample(self.buffer, batch_size)
+
+    def __len__(self):
+        return len(self.buffer)
