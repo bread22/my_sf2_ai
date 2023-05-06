@@ -1,2 +1,2 @@
 game: StreetFighterIISpecialChampionEdition-Genesis
-state: Champion.Level1.RyuVsGuile
+state: Champion.Level1.RyuVsGuile, Champion.Level12.RyuVsBison
