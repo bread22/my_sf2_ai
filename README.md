@@ -7,3 +7,7 @@
 - then I tried again and ask specifically for baseline3 as [linyiLYi](https://github.com/linyiLYi/street-fighter-ai) does
 - chatGPT gives a simple yet workable model (for rookies like me)
 - I fine tuned the reward a bit and increase the winning rate significantly once it is trained overnight.
+
+
+
+## Conversation with ChatGPT (GPT-4) is available at `main/conversation.md`
