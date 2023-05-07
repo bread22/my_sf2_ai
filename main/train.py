@@ -4,27 +4,27 @@ from custom_sf2_env import CustomSF2Env
 from stable_baselines3.common.callbacks import BaseCallback
 
 
-class RenderEveryTenEpisodesCallback(BaseCallback):
-    def __init__(self, check_freq: int):
-        super(RenderEveryTenEpisodesCallback, self).__init__()
-        self.check_freq = check_freq
+class SaveEveryNIterationsCallback(BaseCallback):
+    def __init__(self, save_freq: int, model_path: str):
+        super(SaveEveryNIterationsCallback, self).__init__()
+        self.save_freq = save_freq
+        self.model_path = model_path
         self.episode_counter = 0
-        self.should_render = False
+        self.saved_last_iteration = False
 
     def _on_step(self) -> bool:
-        game_over = self.training_env.get_attr('game_over')[0]
-        if game_over:
+        if self.training_env.get_attr('game_over')[0]:
             self.episode_counter += 1
-            self.training_env.env_method('reset', indices=[0])
-            if self.episode_counter % self.check_freq == 0:
-                self.should_render = True
-            else:
-                self.should_render = False
+            print(f'Episode: {self.episode_counter}')
+            self.saved_last_iteration = False
 
-        if self.should_render:
-            self.training_env.env_method('render', indices=[0])
+        if self.episode_counter % self.save_freq == 0 and not self.saved_last_iteration:
+            print(f'Saving model at {self.episode_counter // self.training_env.num_envs} iterations')
+            self.model.save(f"{self.model_path}_iter{self.episode_counter // self.training_env.num_envs}")
+            self.saved_last_iteration = True
 
         return True
+
 
 
 def render_callback(local_vars, global_vars):
@@ -44,7 +44,7 @@ def main():
     state = "Champion.Level12.RyuVsBison"
 
     model_path = 'models/sf2_model'
-
+    save_freq = 10
     num_envs = 4  # Number of environments to run in parallel
 
     # Create a vectorized environment with multiple parallel environments
@@ -55,10 +55,10 @@ def main():
         "features_extractor_kwargs": {"feature_dim": 128},
     }
 
-    model = PPO("CnnPolicy", env, policy_kwargs=policy_kwargs, verbose=1, device='cuda')
-    # model.learn(total_timesteps=int(1e5))
-    # callback = RenderEveryTenEpisodesCallback(check_freq=5)
-    model.learn(total_timesteps=int(1e6))
+    # Load the saved model
+    model = PPO.load(model_path, env)
+    save_every_n_iterations_callback = SaveEveryNIterationsCallback(save_freq=save_freq, model_path=model_path)
+    model.learn(total_timesteps=int(5e6), callback=save_every_n_iterations_callback)
 
     model.save(model_path)
 
